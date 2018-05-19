@@ -217,6 +217,7 @@ def get_venuegen_item(title):
         m = RPR_GetMediaItem(0, i)
         mt = RPR_GetMediaItemTake(m, 0)
         name = RPR_GetSetMediaItemTakeInfo_String(mt, "P_NAME", "", 0)[3]
+        # Empty item check.
         if len(name) > 0: 
             item_names[name.lower().split()[0].strip()] = m
 
