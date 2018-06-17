@@ -1,4 +1,5 @@
 import base64
+import random
 from reaper_python import *
 
 MAXLEN = 1048567
@@ -6,6 +7,9 @@ MIDI_ON = 0x90
 MIDI_OFF = 0x80
 
 RANDOM = 102
+
+# Dummy camera level higher than any of them
+MAX_LEVEL = 9
 
 DIRECTED = {
         11: "[directed_duo_kg]",
@@ -92,9 +96,11 @@ CAMERA = {
         96: "[coop_front_behind]",
         98: "[coop_all_near]",
         99: "[coop_all_far]",
-        100: "[coop_all_behind]"
+        100: "[coop_all_behind]",
 }
 
+# Taken from:
+# http://docs.c3universe.com/rbndocs/index.php?title=RBN2_Camera_And_Lights#Camera
 CAMERA_LEVELS = {
         58: 7,  # [coop_gk_near]
         59: 7,  # [coop_gk_behind]
@@ -344,7 +350,6 @@ def add_text_event(MIDIdata, apos, text):
     MIDIdata.notes.insert(i, e)
     recalculate_positions(MIDIdata)
 
-
 def remove_events(MIDIdata):
     new_notes = []
 
@@ -355,6 +360,7 @@ def remove_events(MIDIdata):
     MIDIdata.notes = new_notes
     recalculate_positions(MIDIdata)
 
+# Choose a random event from the CAMERA list.
 def random_event(notes, index):
     if notes[index].status != MIDI_ON or not isinstance(notes[index], MIDINote):
         return None
@@ -413,17 +419,49 @@ def random_event(notes, index):
             prevs.append(notes[i].note)
             i -= 1
 
-#    RPR_ShowConsoleMsg(str(currents) + '\n')
-#    RPR_ShowConsoleMsg(str(prevs) + '\n')
-#    RPR_ShowConsoleMsg(str(nexts) + '\n')
+    current_level = MAX_LEVEL
+    for note in currents:
+        if note in CAMERA:
+            level = CAMERA_LEVELS[note]
+            current_level = level if level < current_level else current_level 
+
+    blacklist = prevs + nexts + currents
+    if current_level > 0:
+        for note in CAMERA_LEVELS:
+            if CAMERA_LEVELS[note] >= current_level:
+                blacklist.append(note)
+
+    # Determine a whitelist from excluding surrounding events
+    # and events with too high a precedence level.
+    valids = []
+    for note in CAMERA:
+        if note in blacklist:
+            continue
+        if CAMERA_LEVELS[note] > 0 and current_level == 0:
+            continue
+        if CAMERA_LEVELS[note] >= current_level and current_level > 0:
+            continue
+        valids.append(note)
+
+    return random.choice(valids)
+
+def apply_random_notes(MIDIdata):
+    notes = [note for note in MIDIdata.notes if isinstance(note, MIDINote)]
+    to_add = []
+    for i in range(len(notes)):
+        if notes[i].note == RANDOM and notes[i].status == MIDI_ON:
+            to_add.append((notes[i].apos, random_event(notes, i)))
+
+    for element in to_add:
+        add_text_event(MIDIdata, element[0], CAMERA[element[1]])
 
 def venue_generate(item, MIDIdata, mapping, map_range, event_on_off):
     if len(MIDIdata.notes) <= 1: return
     to_add = []
     notes = [note for note in MIDIdata.notes if isinstance(note, MIDINote) and note.note in map_range]
+    if len(notes) <= 1: return
 
     for i in range(len(notes) - 1):
-        random_event(notes, i)
         note = notes[i]
         if note.note in mapping: 
             if note.status == MIDI_ON:
@@ -434,7 +472,6 @@ def venue_generate(item, MIDIdata, mapping, map_range, event_on_off):
                     to_add.append((note.apos, note.note))
                 
     if notes[i] in mapping and notes[i].status == MIDI_ON:
-        random_event(notes, i)
         to_add.append((notes[i].apos, notes[i].note))
 
     for element in to_add:
@@ -444,7 +481,7 @@ def main():
     cam_item = get_venuegen_item("camera")
 
     if cam_item is None:
-        RPR_MB("Could not find a CAMERA MIDI item.", "VenueGen", 0)
+        RPR_MB("Could not find a \"CAMERA\" MIDI item.", "VenueGen", 0)
         return 1
 
     data = get_midi_data(cam_item)
@@ -454,12 +491,13 @@ def main():
     venue_generate(cam_item, data, DIRECTED, cam_range, False)
     venue_generate(cam_item, data, DIRECTED_FREEBIES, cam_range, True)
     venue_generate(cam_item, data, CAMERA, cam_range, False)
+    apply_random_notes(data)
     write_midi_data(cam_item, data)
 
     light_item = get_venuegen_item("lighting")
 
     if light_item is None:
-        RPR_MB("Could not find a LIGHTING MIDI item.", "VenueGen", 0)
+        RPR_MB("Could not find a \"LIGHTING\" MIDI item.", "VenueGen", 0)
         return 1
 
     data = get_midi_data(light_item)
