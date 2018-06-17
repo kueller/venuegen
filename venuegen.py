@@ -5,6 +5,8 @@ MAXLEN = 1048567
 MIDI_ON = 0x90
 MIDI_OFF = 0x80
 
+RANDOM = 102
+
 DIRECTED = {
         11: "[directed_duo_kg]",
         12: "[directed_duo_kb]",
@@ -91,6 +93,48 @@ CAMERA = {
         98: "[coop_all_near]",
         99: "[coop_all_far]",
         100: "[coop_all_behind]"
+}
+
+CAMERA_LEVELS = {
+        58: 7,  # [coop_gk_near]
+        59: 7,  # [coop_gk_behind]
+        60: 6,  # [coop_bk_near]
+        61: 6,  # [coop_bk_behind]
+        62: 5,  # [coop_bg_near]
+        63: 5,  # [coop_bg_behind]
+        64: 4,  # [coop_kv_near] 
+        65: 4,  # [coop_kv_behind]
+        66: 3,  # [coop_gv_near] 
+        67: 3,  # [coop_gv_behind] 
+        68: 2,  # [coop_bv_near] 
+        69: 2,  # [coop_bv_behind] 
+        70: 1,  # [coop_dg_near] 
+        71: 1,  # [coop_bd_near] 
+        72: 0,  # [coop_dv_near] 
+        74: 8,  # [coop_k_closeup_head]
+        75: 8,  # [coop_k_closeup_hand]
+        76: 2,  # [coop_g_closeup_head]
+        77: 2,  # [coop_g_closeup_hand]
+        78: 1,  # [coop_b_closeup_head]
+        79: 1,  # [coop_b_closeup_hand]
+        80: 0,  # [coop_v_closeup]
+        81: 0,  # [coop_d_closeup_head]
+        82: 0,  # [coop_d_closeup_hand]
+        84: 8,  # [coop_k_near]
+        85: 8,  # [coop_k_behind]
+        86: 2,  # [coop_g_near]
+        87: 2,  # [coop_g_behind]
+        88: 1,  # [coop_b_near]
+        89: 1,  # [coop_b_behind]
+        90: 0,  # [coop_v_near]
+        91: 0,  # [coop_v_behind]
+        92: 0,  # [coop_d_near]
+        93: 0,  # [coop_d_behind]
+        95: 0,  # [coop_front_near]
+        96: 0,  # [coop_front_behind]
+        98: 0,  # [coop_all_near]
+        99: 0,  # [coop_all_far]
+        100:0   # [coop_all_behind] 
 }
 
 LIGHTS_SINGLE = {
@@ -311,12 +355,75 @@ def remove_events(MIDIdata):
     MIDIdata.notes = new_notes
     recalculate_positions(MIDIdata)
 
+def random_event(notes, index):
+    if notes[index].status != MIDI_ON or not isinstance(notes[index], MIDINote):
+        return None
+
+    # Current, last, and next notes based on position.
+    # These act as blacklists for what the randomizer can't choose.
+    currents = []
+    prevs = []
+    nexts = []
+
+    current_pos = notes[index].apos
+
+    # Fill lists with the current, last, and next notes
+    # Bubbles up, then back down, only checks start of MIDI notes.
+    i = index
+    while (i < len(notes)):
+        if notes[i].status != MIDI_ON or not isinstance(notes[i], MIDINote): 
+            i += 1
+            continue
+        if notes[i].apos != current_pos:
+            break
+        currents.append(notes[i].note)
+        i += 1
+
+    if i < len(notes):
+        next_pos = notes[i].apos
+
+        while (i < len(notes)):
+            if notes[i].status != MIDI_ON or not isinstance(notes[i], MIDINote): 
+                i += 1
+                continue
+            if notes[i].apos != next_pos:
+                break
+            nexts.append(notes[i].note)
+            i += 1
+
+    i = index - 1
+    while (i >= 0):
+        if notes[i].status != MIDI_ON or not isinstance(notes[i], MIDINote): 
+            i -= 1
+            continue
+        if notes[i].apos != current_pos:
+            break
+        currents.append(notes[i].note)
+        i -= 1        
+
+    if i >= 0:
+        prev_pos = notes[i].apos
+
+        while (i >= 0):
+            if notes[i].status != MIDI_ON or not isinstance(notes[i], MIDINote): 
+                i -= 1
+                continue
+            if notes[i].apos != prev_pos:
+                break
+            prevs.append(notes[i].note)
+            i -= 1
+
+#    RPR_ShowConsoleMsg(str(currents) + '\n')
+#    RPR_ShowConsoleMsg(str(prevs) + '\n')
+#    RPR_ShowConsoleMsg(str(nexts) + '\n')
+
 def venue_generate(item, MIDIdata, mapping, map_range, event_on_off):
     if len(MIDIdata.notes) <= 1: return
     to_add = []
     notes = [note for note in MIDIdata.notes if isinstance(note, MIDINote) and note.note in map_range]
 
     for i in range(len(notes) - 1):
+        random_event(notes, i)
         note = notes[i]
         if note.note in mapping: 
             if note.status == MIDI_ON:
@@ -327,6 +434,7 @@ def venue_generate(item, MIDIdata, mapping, map_range, event_on_off):
                     to_add.append((note.apos, note.note))
                 
     if notes[i] in mapping and notes[i].status == MIDI_ON:
+        random_event(notes, i)
         to_add.append((notes[i].apos, notes[i].note))
 
     for element in to_add:
